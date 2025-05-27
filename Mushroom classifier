@@ -1,0 +1,181 @@
+#please run this pip install!
+#pip install ucimlrepo
+import pandas as pd
+import numpy as np
+import sklearn
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from ucimlrepo import fetch_ucirepo 
+from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.dummy import DummyClassifier
+  
+# fetch dataset 
+mushroom = fetch_ucirepo(id=73) 
+  
+# data (as pandas dataframes) 
+X = mushroom.data.features 
+y = mushroom.data.targets 
+
+
+#insert the target variable, which is whether the mushroom is poisonous or 
+#edible
+X.insert(0, 'poisonous', y['poisonous'])
+
+#every classifier in this dataset was categorical, so i am converting them all
+#to numerical values using dummy variables in pandas
+numerical_X = pd.get_dummies(X, drop_first=True)
+#rename this back to X
+X = numerical_X
+
+#shuffle the data so it is random
+shuffled_data = X.sample(frac = 1, random_state = 42).reset_index(drop = True)
+
+#after the data is shuffled, drop the target column
+X = numerical_X.drop(columns=['poisonous_p'])
+y = numerical_X['poisonous_p']
+
+#the dataset has 8,124 instances, so 70% of that is around 5,686 points
+#15% is around 1219
+train_set_size = 5686
+dev_set_size = 1219
+test_set_size = 1219
+
+#create every training, test, and development set
+X_train = shuffled_data[:train_set_size]
+y_train = y[:train_set_size]
+X_dev = shuffled_data[train_set_size:train_set_size + dev_set_size]
+y_dev = y[train_set_size:train_set_size + dev_set_size]
+X_test = shuffled_data[train_set_size + dev_set_size:]
+y_test = y[train_set_size + dev_set_size:]
+
+#scale the data (i originally did not have this, but then I started getting overflow
+#errors in my KNN calculations so had to add this)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_dev_scaled = scaler.transform(X_dev)
+
+#perform logistic regression with 1000 iterations as a standard
+log_reg = LogisticRegression(max_iter=1000, random_state=42)
+log_reg.fit(X_train, y_train)
+y_pred_lr = log_reg.predict(X_dev)
+print(f'Logistic Regression Accuracy: {accuracy_score(y_test, y_pred_lr)}')
+
+
+
+#to find the ideal values for the log reg hyperparameters, I decided to implement
+#a grid search function
+#set the parameter range as shown in the example in the textbook
+param_range = [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+
+#create the parameter grid with the parameter range and other proper hyperparameters
+param_grid = {'C': param_range, 
+               'penalty': ['l1', 'l2'],
+               'solver': ['liblinear', 'saga']
+               }
+
+#create the grid search, following the example in the textbook
+gs = GridSearchCV(log_reg, 
+                  param_grid=param_grid, 
+                  scoring='accuracy', 
+                  refit=True,
+                  cv=10,
+                  n_jobs=-1)
+
+#perform the grid search on the training sets
+gs = gs.fit(X_train, y_train)
+#print the ideal outcomes
+print(f'best grid search score: {gs.best_score_}')
+print(f'Best logistic regression parameters {gs.best_params_}')
+#found that the best parameters were {'C': 0.0001, 'penalty': 'l1', 'solver': 'liblinear'}
+#gave an accuracy score of 0.6327822886670285
+
+
+#i originally was calculating this with euclidean distance, however due to the
+#size of the dataset i was repeatedly encountering overflow errors. When I looked
+#this up, it said manhattan distance was less prone to overflow errors, so I switched
+#to this
+def calc_manhattan_distance(row1, row2):
+    return np.sum(np.abs(row1-row2))
+
+#find the nearest neighbors to the point being tested
+def find_neighbors(X_train, y_train, test_row, num_neighbors):
+    #create a list of the distances, where manhattan distances between points will
+    #be stored
+    distances = []
+    for i, train_row in enumerate(X_train):
+        #calculate manhattan distances and add them to the list
+        dist = calc_manhattan_distance(test_row, train_row)
+        distances.append((y_train[i], dist))
+    #sort the distances
+    distances.sort(key = lambda tup: tup[1])
+    neighbors = distances[:num_neighbors]    
+    return neighbors
+        
+#predict the class based on the nearest neighbors
+def predict_class(X_train, y_train, test_row, num_neighbors):
+    #use the find_neighbors function
+    neighbors = find_neighbors(X_train, y_train, test_row, num_neighbors)
+    #create a label for the outputs
+    output_labels = [neighbor[0] for neighbor in neighbors]
+    #predict the class of the point
+    prediction = max(set(output_labels), key = output_labels.count)
+    return prediction
+
+#finally, predict on all the points
+def predict_knn(X_train, y_train, X_test, num_neighbors):
+    #create a list to store the predictions in
+    predictions = []
+    #for each row in the test set, use the predict class function, then append them
+    #to the list
+    for test_row in X_test:
+        prediction = predict_class(X_train, y_train, test_row, num_neighbors)
+        predictions.append(prediction)
+    return predictions
+
+#switch all of my dataframes to numpy arrays so that they can be processed more easily
+X_train_np = X_train.to_numpy()
+y_train_np = y_train.to_numpy()
+X_dev_np = X_dev.to_numpy()
+y_dev_np = y_dev.to_numpy()
+X_test_np = X_test.to_numpy()
+y_test_np = y_test.to_numpy()
+
+#by trying out a few different K values, I found that k=3 gave the highest accuracy
+k = 3
+
+y_pred_knn = predict_knn(X_train_np, y_train_np, X_dev_np, k)
+
+knn_accuracy = accuracy_score(y_dev_np, y_pred_knn)
+
+print(f'KNN accuracy: {knn_accuracy}')
+
+#use the dummy classifier function with stratified
+dummy_class = DummyClassifier(strategy = 'stratified', random_state = 42)
+dummy_class.fit(X_train, y_train)
+y_pred_dummy = dummy_class.predict(X_dev)
+
+#create a variable to calculate the accuracy
+accuracy_dummy = accuracy_score(y_dev, y_pred_dummy)
+print(f'Dummy Classifier Accuracy (stratified): {accuracy_dummy}')
+
+#use the dummy clasifier function with most frequent
+dummy_class_random = DummyClassifier(strategy="most_frequent", random_state=42)
+dummy_class_random.fit(X_train, y_train)
+y_pred_dummy_random = dummy_class_random.predict(X_dev)
+accuracy_dummy_random = accuracy_score(y_dev, y_pred_dummy_random)
+print(f'Dummy Classifier Accuracy (most_frequent): {accuracy_dummy_random}')
+
+#do logistic regression on the test set, using the ideal hyperparameters
+test_log_reg = LogisticRegression(C=0.0001, penalty='l1', solver='liblinear', 
+                                  max_iter=1000, random_state=42)
+test_log_reg.fit(X_test, y_test)
+test_y_pred_lr = test_log_reg.predict(X_test)
+print(f'Test set Logistic Regression Accuracy: {accuracy_score(y_test, test_y_pred_lr)}')
+
+#perform knn on the test set
+y_test_knn = predict_knn(X_train_np, y_train_np, X_test_np, k)
+
+test_knn_accuracy = accuracy_score(y_test_np, y_test_knn)
+
+print(f'test KNN accuracy: {test_knn_accuracy}')
