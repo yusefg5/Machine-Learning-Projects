@@ -1,0 +1,249 @@
+#import necessary modules
+import csv
+import numpy as np
+
+#open the input file and a new output file
+with open('titanic_train.csv', 'r') as raw_data, open('titanic_train_rel.csv', 'w', newline = '') as rel_data:
+    reader = csv.reader(raw_data)
+    writer = csv.writer(rel_data)
+    
+    # exclude the name column so that i can use the comma character as a delimiter, and names are irrelevant
+    for row in reader:
+        row.pop(11)
+        row.pop(10)
+        row.pop(3)
+        writer.writerow(row)
+        
+    
+        
+
+
+#create a numpy array using the input data
+train_data = np.genfromtxt('titanic_train_rel.csv', delimiter = ',', dtype = None, encoding = None)
+
+#identify the columns showing survival and gender
+survival = train_data[:, 1]
+gender = train_data[:, 3]
+
+#find the total males and male survivors so that i can calculate the percentage of survivors
+male_survivors = 0
+total_males = 0
+#find the total females and female survivors so i can calculate percentage
+female_survivors = 0
+total_females = 0
+#find the total passengers and survivors for a base value
+total_pass = 0
+total_survivors = 0
+
+#iterate through every row
+for i in range(len(gender)):
+    #if the passenger is male, add one to the total male count and only add one to the
+    #male survivors if he survives
+    if gender[i] == 'male':
+        total_males += 1
+        total_pass += 1
+        if survival[i] == '1':
+            male_survivors += 1
+            total_survivors += 1
+    #do the same for females
+    elif gender[i] == 'female':
+        total_females += 1
+        total_pass += 1
+        if survival[i] == '1':
+            female_survivors += 1
+            total_survivors += 1
+    
+#calculate the percentage of males and females that survived
+male_percentage = (male_survivors / total_males) *100
+female_percentage = female_survivors / total_females *100
+surv_percentage =  (total_survivors / total_pass) *100
+
+#print the percentages
+print(f'male survival percentage {male_percentage:.2f}%, female survival percentage {female_percentage:.2f}%')
+print(f'overall survival chance: {surv_percentage:.2f}%')
+train_data[train_data[:, 4] == '', 4] = 0
+
+#indentify the age column
+age = train_data[1:, 4]
+
+#create different categories for different age groups. These will be children,
+#middle aged, adults, and seniors
+tot_kids = 0
+surv_kids = 0
+tot_mid = 0
+surv_mid = 0
+tot_adults = 0
+surv_adults = 0
+tot_seniors = 0
+surv_seniors = 0
+
+#iterate through every column
+for i in range(len(age)):
+    #children are considered 1-20, add these to the survivor and totals
+    if 0 < float(age[i]) < 20:
+        tot_kids += 1
+        if survival[i] == '1':
+            surv_kids += 1
+    #midage are considered 20-30 year olds
+    elif 20 <= float(age[i]) < 30:
+        tot_mid += 1
+        if survival[i] == '1':
+            surv_mid += 1
+    #adults are considered 30-60
+    elif 30 <= float(age[i]) < 60:
+        tot_adults += 1
+        if survival[i] == '1':
+            surv_adults += 1
+    #seniors are considered 60+
+    elif float(age[i]) > 60:
+        tot_seniors += 1
+        if survival[i] == '1':
+            surv_seniors += 1
+
+#calculate the percentage of survivors for each age group, then print percentages
+child_percentage = (surv_kids / tot_kids) *100
+mid_percentage = (surv_mid / tot_mid) *100
+adult_percentage = (surv_adults / tot_adults) *100
+senior_percentage = (surv_seniors / tot_seniors) *100
+
+print(f'Child survival percentage: {child_percentage:.2f}%')
+print(f'mid age survival percentage: {mid_percentage:.2f}%')
+print(f'adult survival percentage: {adult_percentage:.2f}%')
+print(f'senior survival percentage: {senior_percentage:.2f}%')
+
+#identify sibsp column
+sibsp = train_data[:, 5]
+
+#find who has no sibsp onboard
+no_sibsp = 0
+no_sibsp_surv = 0
+
+#find people who have ay number of sibsp onboard
+y_sibsp = 0
+y_sibsp_surv = 0
+
+#find who had no sibsp, add these to survivors and totals
+for i in range(len(sibsp)):
+    if sibsp[i] == '0':
+        no_sibsp += 1
+        if survival[i] == '1':
+            no_sibsp_surv += 1
+    #otherwise, add these to people with sibsp onboard
+    else:
+        y_sibsp += 1
+        if survival[i] == '1':
+            y_sibsp_surv += 1
+
+#calculate and print percentages
+no_sibsp_percentage = (no_sibsp_surv / no_sibsp) *100
+y_sibsp_percentage = (y_sibsp_surv / y_sibsp) *100
+
+print(f'no sibsp survival percentage {no_sibsp_percentage:.2f}%, sibsp survival percentage {y_sibsp_percentage:.2f}%')
+
+#indentify parch
+parch = train_data[:, 6]
+
+#repeat sibsp for parch
+no_parch = 0
+no_parch_surv = 0
+
+y_parch = 0
+y_parch_surv = 0
+
+for i in range(len(parch)):
+    if parch[i] == '0':
+        no_parch += 1
+        if survival[i] == '1':
+            no_parch_surv += 1
+    else:
+        y_parch += 1
+        if survival[i] == '1':
+            y_parch_surv += 1
+            
+no_parch_percentage = (no_parch_surv / no_parch) *100
+y_parch_percentage = (y_parch_surv / y_parch) *100
+
+print(f'no parch survival percentage {no_parch_percentage:.2f}%, parch survival percentage {y_parch_percentage:.2f}%')
+
+#open the test dataset to calculate survival chances for the unknown passengers
+with open('titanic_test.csv', 'r') as raw_test_data, open('titanic_test_rel.csv', 'w', newline = '') as rel_test_data:
+    reader2 = csv.reader(raw_test_data)
+    writer2 = csv.writer(rel_test_data)
+    
+    for row in reader2:
+        row.pop(10)
+        row.pop(9)
+        row.pop(7)
+        row.pop(2)
+        writer2.writerow(row)
+        
+#load the csv file into a numpy array
+test_data = np.genfromtxt('titanic_test_rel.csv', delimiter = ',', dtype = None, encoding = None)
+
+test_data[test_data[:, 3] == '', 3] = 0
+#create a function to test each individual passengers important values to checl for
+#survival chance
+def calculate_survival_chance(gender, age, sibsp, parch):
+    #use the base survival rate as the starting survival chance
+    survival_chance = 38.38
+
+    #females were 35% more likely than base to survive than base
+    if gender == 'female':
+        survival_chance += 35.82
+    #males were 20% less likely to survive than base
+    elif gender == 'male':
+        survival_chance -= 20
+
+    #find the survival chances depending on age group
+    age = float(age)
+    #children were . 5% more likely to survive than base
+    if age < 20:
+        survival_chance += 0.5
+    #midage were 2% more likely to survive than base
+    elif 20 <= age < 30:
+        survival_chance += 2
+    #adults were 3% less likely to survive than base
+    elif 30 <= float(age) < 60:
+        survival_chance -= 3
+    #seniors were 12% more likely to survive than base
+    elif age >= 60:
+        survival_chance += 12
+ 
+
+    #adjust for sibsp status
+    #people with any sibsp on board were 8% more likely to survive than baseline
+    if int(sibsp) > 0:
+        survival_chance += 8
+    else:
+        #those without were 4% less likely
+        survival_chance -= 4
+
+    #adjust for parch status
+    #people with parch onbaord were 12% more likely to survive than base
+    if int(parch) > 0:
+        survival_chance += 12
+    else:
+        #those without parch were 4% less likely to survive
+        survival_chance -= 4
+        
+    return survival_chance
+
+#create a list each time to pair the passenger ID and chance of survival
+survival_chances = []
+
+#iterate through each row in the array, excluding the headers. find the relevant
+#columns and insert these into the function from above to caluclate survival percentage
+for row in test_data[1:, :]:
+    passenger_id = row[0]
+    gender = row[2]
+    age = row[3]
+    sibsp = row[4]
+    parch = row[5]
+
+    # Calculate survival chance
+    chance = calculate_survival_chance(gender, age, sibsp, parch)
+    survival_chances.append((passenger_id, chance))
+
+#convert the results into an array for easy reading
+survival_chances_array = np.array(survival_chances, dtype=object)
+print(survival_chances_array)
