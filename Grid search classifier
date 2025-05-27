@@ -1,0 +1,173 @@
+#please run this pip install!
+#pip install ucimlrepo
+import pandas as pd
+import numpy as np
+import sklearn
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from ucimlrepo import fetch_ucirepo 
+from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.dummy import DummyClassifier
+import warnings
+
+warnings.filterwarnings('ignore')
+  
+# fetch dataset 
+mushroom = fetch_ucirepo(id=73) 
+  
+# data (as pandas dataframes) 
+X = mushroom.data.features 
+y = mushroom.data.targets 
+
+
+#insert the target variable, which is whether the mushroom is poisonous or 
+#eduble
+X.insert(0, 'poisonous', y['poisonous'])
+
+#every classifier in this dataset was categorical, so i am converting them all
+#to numerical values using dummy variables in pandas
+numerical_X = pd.get_dummies(X, drop_first=True)
+#rename this back to X
+X = numerical_X
+
+#shuffle the data so it is random
+shuffled_data = X.sample(frac = 1, random_state = 42).reset_index(drop = True)
+
+#after the data is shuffled, drop the target column
+X = numerical_X.drop(columns=['poisonous_p'])
+y = numerical_X['poisonous_p']
+
+train_set_size = 6500
+test_set_size = 1624
+
+
+#create every training, test, and development set
+X_train = shuffled_data[:train_set_size]
+y_train = y[:train_set_size]
+X_test = shuffled_data[train_set_size:train_set_size + test_set_size]
+y_test = y[train_set_size:train_set_size + test_set_size]
+
+#scale the data to avoid overflow
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+#set a default value for k
+k = 10
+
+#create a function for k fold validation
+def k_fold_val(X, y, k = 10):
+    #convert the dataframes to numpy arrays so that they can be more easily 
+    #calculated
+    X = np.array(X)
+    y = np.array(y)
+    #calculate fold sizes
+    fold_size = len(X) // k
+    
+    #create a list to store accuracies so that they can be averaged
+    accuracy_list = []
+    
+    #iterate through each fold
+    for fold in range(k):
+        #find the start and ending index of each fold
+        fold_start = fold * fold_size
+        fold_end = (fold + 1) * fold_size
+        #create the testing folds for x and y
+        X_test_fold = X[fold_start:fold_end]
+        y_test_fold = y[fold_start:fold_end]
+        #create the training folds for them as well
+        train_folds_X = np.concatenate([X[:fold_start], X[fold_end:]], axis = 0)
+        train_folds_y = np.concatenate([y[:fold_start], y[fold_end:]], axis = 0)
+        
+        #perform logistic regression, i had to set a maximum iteration limit
+        #because i was getting an error that it was not converging
+        log_reg = LogisticRegression(max_iter=1000, random_state=42)
+        log_reg.fit(X_train, y_train)
+        
+        #predict y
+        y_prediction = log_reg.predict(X_test_fold)
+        
+        #find the accuracy score for each fold, then append the accuracy to the list
+        accuracy = accuracy_score(y_test_fold, y_prediction)
+        accuracy_list.append(accuracy)
+        
+        print(f'fold {fold + 1}/{k} accuracy = {accuracy}')
+    
+    #average the accuracy scores
+    mean_accuracies = np.mean(accuracy_list)
+    print(f'Mean accuracy: {mean_accuracies}')
+        
+    return mean_accuracies
+
+#run the function
+mean_accuracy = k_fold_val(X_train_scaled, y_train, k)
+
+
+#create the grid search function
+def grid_search(X, y, k, param_grid):
+    #store the highest accuracy and best parameters
+    accuracy_high = 0
+    ideal_params = None
+    results = []
+    
+    #since im doing logistic regression, the hyperparameters i'm using are C and penalty
+    #I'll iterate through every value defined in the parameter grid
+    for C in param_grid['C']:
+        for penalty in param_grid['penalty']:
+            
+            #this is mostly the same as the above function, but with C and penalty
+            #as the looping values
+            def k_fold_val(X, y, k = 10, C=C, penalty=penalty):
+                X = np.array(X)
+                y = np.array(y)
+                fold_size = len(X) // k
+                
+                accuracy_list = []
+                
+                for fold in range(k):
+                    fold_start = fold * fold_size
+                    fold_end = (fold + 1) * fold_size
+                    X_test_fold = X[fold_start:fold_end]
+                    y_test_fold = y[fold_start:fold_end]
+                    train_folds_X = np.concatenate([X[:fold_start], X[fold_end:]], axis = 0)
+                    train_folds_y = np.concatenate([y[:fold_start], y[fold_end:]], axis = 0)
+                    
+                    log_reg = LogisticRegression(C=C, penalty = penalty, solver = 'saga', 
+                                                 max_iter=1000, random_state=42)
+                    log_reg.fit(X_train, y_train)
+                    
+                    y_prediction = log_reg.predict(X_test_fold)
+                    
+                    accuracy = accuracy_score(y_test_fold, y_prediction)
+                    accuracy_list.append(accuracy)
+                    
+                mean_accuracies = np.mean(accuracy_list)                 
+                return mean_accuracies
+            
+            mean_accuracy = k_fold_val(X_train_scaled, y_train, k)
+            
+            #add the current parameters to the list of results
+            results.append({'C': C, 'penalty': penalty, 'accuracy': mean_accuracy})
+            print(f"Mean accuracy for C={C}, penalty={penalty}: {mean_accuracy}")
+            
+            #if the current set of parameters is better than the previous best, 
+            #update the best parameters
+            if mean_accuracy > accuracy_high:
+                accuracy_high = mean_accuracy
+                best_params = {'C': C, 'penalty': penalty}
+        
+        print(f"\nBest parameters: {best_params} with accuracy {accuracy_high}")
+        return best_params, accuracy_high, results
+    
+
+#create the parameter range and grid
+param_range = [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+param_grid = {'C': param_range, 
+               'penalty': ['l1', 'l2'],
+               }
+#print results
+print('For training set:')
+best_params, accuracy_high, results = grid_search(X_train_scaled, y_train, k, param_grid)
+print('for test set:')
+best_test_params, accuracy_high_test, results_test = grid_search(X_test_scaled, y_test, k, param_grid)
